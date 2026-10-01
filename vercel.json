@@ -1,0 +1,11 @@
+{
+  "installCommand": "cd .bolt && npm install",
+  "buildCommand": "cd .bolt && npm run build",
+  "outputDirectory": ".bolt/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
