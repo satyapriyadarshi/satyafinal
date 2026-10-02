@@ -14,6 +14,7 @@ export type ProductVerificationInput = {
 export type AiVerificationResult = {
   score: number;
   summary: string;
+  textResponse?: string;
   productDescription?: string;
   ratingReason?: string;
   assessment?: {
@@ -93,10 +94,11 @@ export function extractAiVerificationResult(
     };
   }
 
-  if (/Unused Respond to Webhook node found|Internal Server Error|Webhook.*failed|not responding|500/i.test(trimmedText)) {
+  if (/Unused Respond to Webhook node found|Internal Server Error|Webhook.*failed|not responding|\bHTTP\s+500\b|\bstatus(?:Code)?["'\s:=]+500\b/i.test(trimmedText)) {
     return {
       score: safeFallback,
       summary: `AI verification service is temporarily unavailable. Using local score: ${safeFallback}/100.`,
+      textResponse: trimmedText,
       source: 'local',
     };
   }
@@ -107,13 +109,19 @@ export function extractAiVerificationResult(
     return {
       score: normalizedScore,
       summary: `AI rating: ${normalizedScore}/100`,
+      textResponse: trimmedText,
       source: 'n8n',
     };
   }
 
+  let textResponse: string | undefined;
+
   try {
     let parsedResponse: unknown = JSON.parse(trimmedText);
     if (Array.isArray(parsedResponse)) parsedResponse = parsedResponse[0];
+    if (typeof parsedResponse === 'string') {
+      textResponse = parsedResponse.trim();
+    }
     if (parsedResponse && typeof parsedResponse === 'object') {
       const outer = parsedResponse as Record<string, unknown>;
       const nested = outer.output ?? outer.data ?? outer.response;
@@ -123,6 +131,7 @@ export function extractAiVerificationResult(
         try {
           parsedResponse = JSON.parse(nested);
         } catch {
+          textResponse = nested.trim();
           parsedResponse = { ...outer, output: nested };
         }
       }
@@ -149,6 +158,7 @@ export function extractAiVerificationResult(
       return {
         score: normalizedScore,
         summary: String(record.summary ?? record.message ?? record.result ?? record.imageQualitySummary ?? (assessment.grade ? `AI assessment: Grade ${assessment.grade}` : `AI rating: ${normalizedScore}/100`)),
+        textResponse,
         productDescription: stringValue(record, ['productDescription', 'product_description', 'productSummary', 'product_summary', 'description']),
         ratingReason: stringValue(record, ['ratingReason', 'rating_reason', 'reason', 'justification', 'explanation', 'whyThisRating']),
         assessment: Object.values(assessment).some(Boolean) ? assessment : undefined,
@@ -165,13 +175,15 @@ export function extractAiVerificationResult(
     return {
       score: normalizedScore,
       summary: `AI rating: ${normalizedScore}/100`,
+      textResponse: trimmedText,
       source: 'n8n',
     };
   }
 
   return {
     score: safeFallback,
-    summary: trimmedText || `AI rating: ${safeFallback}/100`,
+    summary: textResponse ? `AI response received from n8n.` : trimmedText || `AI rating: ${safeFallback}/100`,
+    textResponse: textResponse || trimmedText,
     source: 'n8n',
   };
 }

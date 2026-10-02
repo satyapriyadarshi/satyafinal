@@ -19,6 +19,7 @@ export function AddProducePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [webhookScore, setWebhookScore] = useState<number | null>(null);
   const [webhookSummary, setWebhookSummary] = useState<string>('');
+  const [webhookTextResponse, setWebhookTextResponse] = useState<string>('');
   const [webhookProductDescription, setWebhookProductDescription] = useState<string>('');
   const [webhookRatingReason, setWebhookRatingReason] = useState<string>('');
   const [webhookAssessment, setWebhookAssessment] = useState<ReturnType<typeof extractAiVerificationResult>['assessment']>(undefined);
@@ -111,7 +112,16 @@ export function AddProducePage() {
       const responseText = await response.text();
 
       if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}`);
+        const failureResult = extractAiVerificationResult(responseText, aiScore);
+        setWebhookScore(failureResult.score);
+        setWebhookSummary(`n8n returned HTTP ${response.status}. ${failureResult.summary}`);
+        setWebhookTextResponse(responseText || 'n8n returned an empty response.');
+        setWebhookProductDescription('');
+        setWebhookRatingReason('');
+        setWebhookAssessment(undefined);
+        setHasN8nRating(false);
+        showToast(`AI verification failed with HTTP ${response.status}. See the response below.`, 'error');
+        return;
       }
 
       console.log('Grade image webhook response:', responseText);
@@ -119,13 +129,14 @@ export function AddProducePage() {
       const result = extractAiVerificationResult(responseText, aiScore);
       setWebhookScore(result.score);
       setWebhookSummary(result.summary);
+      setWebhookTextResponse(result.textResponse || '');
       setWebhookProductDescription(result.productDescription || buildProductDescription(form));
       setWebhookRatingReason(result.ratingReason || result.summary);
       setWebhookAssessment(result.assessment);
       setHasN8nRating(result.source === 'n8n');
 
-      if (/temporarily unavailable/i.test(result.summary)) {
-        showToast('AI service is temporarily unavailable; using local verification score.', 'success');
+      if (result.source === 'local') {
+        showToast('AI service is unavailable; see the response below for details.', 'error');
       } else {
         showToast('AI verification completed.', 'success');
       }
@@ -133,12 +144,14 @@ export function AddProducePage() {
       console.error('Grade image webhook error:', error);
       const fallbackResult = extractAiVerificationResult(null, aiScore);
       setWebhookScore(fallbackResult.score);
-      setWebhookSummary(fallbackResult.summary);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setWebhookSummary('Could not connect to the n8n verification webhook. Check that the workflow is active and the endpoint is correct.');
+      setWebhookTextResponse(errorMessage);
       setWebhookProductDescription('');
       setWebhookRatingReason('');
       setWebhookAssessment(undefined);
       setHasN8nRating(false);
-      showToast('AI service is unavailable right now; using the local verification score instead.', 'success');
+      showToast('Could not connect to AI verification. See the response below for details.', 'error');
     } finally {
       setIsProcessingBackground(false);
     }
@@ -414,6 +427,12 @@ export function AddProducePage() {
               {webhookAssessment.matchesStatedDetails && <AssessmentSection title="Matches stated details" text={webhookAssessment.matchesStatedDetails} />}
               {webhookAssessment.priceAssessment && <AssessmentSection title="Price assessment" text={webhookAssessment.priceAssessment} />}
               {webhookAssessment.suggestionsForFarmer && <AssessmentSection title="Suggestions for farmer" text={webhookAssessment.suggestionsForFarmer} />}
+            </div>
+          )}
+          {webhookTextResponse && (
+            <div className="mt-4 border-t border-brand-100 pt-3">
+              <h2 className="text-sm font-semibold text-gray-900">AI response</h2>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">{webhookTextResponse}</p>
             </div>
           )}
           {hasN8nRating && (

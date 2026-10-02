@@ -29,6 +29,7 @@ describe('AI product verification', () => {
 
     expect(result.score).toBe(82);
     expect(result.summary.toLowerCase()).toContain('temporarily unavailable');
+    expect(result.textResponse).toContain('Unused Respond to Webhook node found');
   });
 
   it('extracts a numeric rating from a text response', () => {
@@ -36,6 +37,16 @@ describe('AI product verification', () => {
 
     expect(result.score).toBe(76);
     expect(result.summary).toContain('76');
+    expect(result.textResponse).toBe('AI rating: 76/100');
+  });
+
+  it('preserves a plain-text n8n response, including when wrapped in output', () => {
+    const response = 'Grade B: tomatoes look fresh. Recommended price: 42 per kg.';
+    const directResult = extractAiVerificationResult(response, 50);
+    const wrappedResult = extractAiVerificationResult(JSON.stringify({ output: response }), 50);
+
+    expect(directResult.textResponse).toBe(response);
+    expect(wrappedResult.textResponse).toBe(response);
   });
 
   it('keeps the product description and reason from a structured n8n response', () => {
@@ -78,6 +89,25 @@ describe('AI product verification', () => {
       suggestionsForFarmer: 'Sort damaged produce and improve post-harvest handling.',
     });
     expect(result.summary).toBe('AI assessment: Grade D');
+  });
+
+  it('accepts the n8n grade assessment response when text includes a 5000 kg quantity', () => {
+    const result = extractAiVerificationResult(JSON.stringify({
+      grade: 'A',
+      quality_assessment: 'The potatoes appear fresh, clean, and uniform in size.',
+      matches_stated_details: 'The image clearly shows potatoes in the vegetables category.',
+      price_assessment: 'For a 5000 kg lot, the estimated total is ₹60,000 to ₹90,000.',
+      suggestions_for_farmer: 'Store the potatoes in a cool, dry, dark space.',
+    }), 72);
+
+    expect(result.source).toBe('n8n');
+    expect(result.assessment).toEqual({
+      grade: 'A',
+      qualityAssessment: 'The potatoes appear fresh, clean, and uniform in size.',
+      matchesStatedDetails: 'The image clearly shows potatoes in the vegetables category.',
+      priceAssessment: 'For a 5000 kg lot, the estimated total is ₹60,000 to ₹90,000.',
+      suggestionsForFarmer: 'Store the potatoes in a cool, dry, dark space.',
+    });
   });
 
   it('builds a factual product description and rating label', () => {
